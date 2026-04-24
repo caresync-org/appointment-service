@@ -29,6 +29,9 @@ jobs:
   build-snyk:
     name: "Job 2 — Install & Snyk"
     needs: sonarqube
+    permissions:
+      security-events: write    # 👈 ADDED
+      contents: read            # 👈 ADDED
     uses: caresync-org/template-ci/.github/workflows/template-build-snyk.yml@dev
     with:
       service_name: "appointment"
@@ -44,8 +47,8 @@ jobs:
     name: "Job 3 — Docker Build, Trivy & Push"
     needs: build-snyk
     permissions:
-      security-events: write    # 👈 ADDED
-      contents: read            # 👈 ADDED
+      security-events: write
+      contents: write           # 👈 CHANGED from read to write
     uses: caresync-org/template-ci/.github/workflows/template-docker.yml@dev
     with:
       service_name:      "appointment"
