@@ -10,11 +10,18 @@ on:
       - dev
       - production
 
+# Global default — lock everything down first
+permissions:
+  contents: read
+
 jobs:
 
   # ── Stage 1: SonarQube SAST ─────────────────────────────────────────────────
   sonarqube:
     name: SonarQube SAST
+    permissions:
+      contents: read
+      security-events: write       # needed for SAST result upload
     uses: caresync-org/template-ci/.github/workflows/template-sonarqube.yml@dev
     with:
       service_name: caresync-appointment-service
@@ -29,6 +36,9 @@ jobs:
   build-and-snyk:
     name: Build + Snyk SCA
     needs: sonarqube
+    permissions:
+      contents: read
+      security-events: write       # needed for Snyk result upload
     uses: caresync-org/template-ci/.github/workflows/template-build-snyk.yml@dev
     with:
       service_name: caresync-appointment-service
@@ -43,6 +53,10 @@ jobs:
   docker:
     name: Docker Build + Push
     needs: build-and-snyk
+    permissions:
+      contents: write              # needed to push/tag image references
+      security-events: write       # needed for Trivy result upload
+      packages: write              # needed if pushing to GHCR (safe to keep)
     uses: caresync-org/template-ci/.github/workflows/template-docker.yml@dev
     with:
       service_name: caresync-appointment-service
@@ -59,6 +73,8 @@ jobs:
     name: Production Approval Gate
     needs: docker
     if: github.ref_name == 'production'
+    permissions:
+      contents: read
     uses: caresync-org/template-ci/.github/workflows/template-approval-gate.yml@dev
     with:
       service_name: caresync-appointment-service
@@ -78,6 +94,8 @@ jobs:
       always() &&
       needs.docker.result == 'success' &&
       (needs.approval-gate.result == 'success' || needs.approval-gate.result == 'skipped')
+    permissions:
+      contents: write              # needed to commit manifest changes
     uses: caresync-org/template-ci/.github/workflows/template-cd.yml@dev
     with:
       service_name: caresync-appointment-service
@@ -91,3 +109,99 @@ jobs:
       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
       DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+
+
+
+# name: CareSync Appointment Service CI/CD
+
+# on:
+#   push:
+#     branches:
+#       - dev
+#       - production
+#   pull_request:
+#     branches:
+#       - dev
+#       - production
+
+# jobs:
+
+#   # ── Stage 1: SonarQube SAST ─────────────────────────────────────────────────
+#   sonarqube:
+#     name: SonarQube SAST
+#     uses: caresync-org/template-ci/.github/workflows/template-sonarqube.yml@dev
+#     with:
+#       service_name: caresync-appointment-service
+#     secrets:
+#       SONARQUBE_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+#       SONARQUBE_URL: ${{ secrets.SONARQUBE_URL }}
+#       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+#       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+#       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+#   # ── Stage 2: Build + Snyk SCA ────────────────────────────────────────────────
+#   build-and-snyk:
+#     name: Build + Snyk SCA
+#     needs: sonarqube
+#     uses: caresync-org/template-ci/.github/workflows/template-build-snyk.yml@dev
+#     with:
+#       service_name: caresync-appointment-service
+#       node_version: '20'
+#     secrets:
+#       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+#       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+#       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+#       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+#   # ── Stage 3: Docker Build + Trivy + Push ─────────────────────────────────────
+#   docker:
+#     name: Docker Build + Push
+#     needs: build-and-snyk
+#     uses: caresync-org/template-ci/.github/workflows/template-docker.yml@dev
+#     with:
+#       service_name: caresync-appointment-service
+#       image_name: caresync-appointment
+#     secrets:
+#       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+#       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+#       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+#       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+#       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+#   # ── Stage 4: Manual Approval Gate (production only) ──────────────────────────
+#   approval-gate:
+#     name: Production Approval Gate
+#     needs: docker
+#     if: github.ref_name == 'production'
+#     uses: caresync-org/template-ci/.github/workflows/template-approval-gate.yml@dev
+#     with:
+#       service_name: caresync-appointment-service
+#       image_version: ${{ needs.docker.outputs.image_version }}
+#       target_environment: production
+#       target_namespace: caresync-prod
+#     secrets:
+#       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+#       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+#       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+#   # ── Stage 5: CD — Update ArgoCD Manifests ────────────────────────────────────
+#   cd:
+#     name: CD — Update Manifests
+#     needs: [docker, approval-gate]
+#     if: |
+#       always() &&
+#       needs.docker.result == 'success' &&
+#       (needs.approval-gate.result == 'success' || needs.approval-gate.result == 'skipped')
+#     uses: caresync-org/template-ci/.github/workflows/template-cd.yml@dev
+#     with:
+#       service_name: caresync-appointment-service
+#       service_key: appointment
+#       image_version: ${{ needs.docker.outputs.image_version }}
+#       branch: ${{ github.ref_name }}
+#     secrets:
+#       MANIFEST_REPO_PAT: ${{ secrets.MANIFEST_REPO_PAT }}
+#       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+#       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+#       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+#       DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
+#       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
